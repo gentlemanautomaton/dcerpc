@@ -1,6 +1,10 @@
 package ndr
 
-import "io"
+import (
+	"io"
+
+	"github.com/gentlemanautomaton/dcerpc/formatlabel"
+)
 
 const zeroPaddingLen = 512
 const writerBufLen = 16
@@ -71,9 +75,9 @@ type Writer interface {
 
 // NewWriter returns a new Writer that will write to the given underlying
 // io.Writer using the given format label.
-func NewWriter(w io.Writer, format FormatLabel) Writer {
-	switch {
-	case format.CharacterRepresentation() == ASCII && format.IntegerRepresentation() == BigEndian && format.FloatRepresentation() == IEEE:
+func NewWriter(w io.Writer, format formatlabel.Format) Writer {
+	switch format {
+	case formatlabel.BEAIEEE:
 		return &writerBEAIEEE{writer{
 			Writer: w,
 			refs:   make(map[uintptr]uint64),
