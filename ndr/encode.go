@@ -16,11 +16,11 @@ type encInstr struct {
 	index []int
 }
 
-// EncOp represents a compiled NDR encoding operation for a particular type.or
+// EncOp represents a compiled NDR encoding operation for a particular type or
 // field.
 type EncOp func(w Writer, s *State, v reflect.Value)
 
-// EncNoop is an NDR encoding function that does nothing..
+// EncNoop is an NDR encoding function that does nothing.
 func EncNoop(w Writer, s *State, v reflect.Value) {}
 
 // EncBytes is an NDR encoding function for a byte slice.

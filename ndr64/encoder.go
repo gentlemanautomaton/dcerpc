@@ -13,13 +13,13 @@ import (
 var encTypeCache = ndr.NewEncoderTypeCache()
 
 // Encoder encodes Go types as NDR64 data and transmits them via an underlying
-// io.Writer..
+// io.Writer.
 type Encoder struct {
 	mutex sync.Mutex
 	w     ndr.Writer
 }
 
-// NewEncoder returns a new encoder that transmits nNDR64-encoded values on the
+// NewEncoder returns a new encoder that transmits NDR64-encoded values on the
 // given io.Writer. Writes are guarded by a mutex and are written atomicaly.
 func NewEncoder(w io.Writer) *Encoder {
 	return &Encoder{

@@ -9,10 +9,10 @@ import (
 	"github.com/gentlemanautomaton/dcerpc/formatlabel"
 )
 
-// TODO: Store a separate type cache for each supported transfer syntax (NDR and NDR64)
 var encTypeCache = NewEncoderTypeCache()
 
-// Encoder is capable of encoding Go types as Network Data Representation data.
+// Encoder encodes Go types as NDR data and transmits them via an underlying
+// io.Writer.
 type Encoder struct {
 	mutex  sync.Mutex
 	w      Writer
@@ -39,19 +39,17 @@ func (enc *Encoder) Encode(v interface{}) error {
 	return enc.EncodeValue(reflect.ValueOf(v))
 }
 
-// EncodeValue encodes the given value in network data representation format and
-// writes it to the Encoder's underlying io.Writer.
+// EncodeValue encodes the given value in NDR and transmits the encoded value
+// on the underlying io.Writer.
 func (enc *Encoder) EncodeValue(v reflect.Value) error {
-	//enc.cache.RLock()
-
 	op := encTypeCache.Get(v.Type())
-	// TODO: Add pending mechanism to avoid duplication of effort
+	// TODO: Add cache pending mechanism to avoid duplication of effort
 	if op == nil {
 		op = EncOpFor(v.Type())
 		encTypeCache.Add(v.Type(), op)
 	}
 
-	s := State{} // FIXME: Figure out how to handle state.
+	s := State{} // FIXME: Figure out how the caller should provide state
 
 	enc.mutex.Lock()
 	op(enc.w, &s, v) // TOOD: Return error from op?

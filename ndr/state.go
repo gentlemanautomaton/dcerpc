@@ -3,7 +3,7 @@ package ndr
 import "sync"
 
 // State represents the shared encoder and decoder state when communicating
-// via network data representation.
+// via NDR.
 type State struct {
 	mutex sync.RWMutex
 	// ptrToRef maps pointers to referent identifiers. Pointers are cast to
