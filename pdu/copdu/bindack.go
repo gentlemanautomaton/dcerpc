@@ -2,9 +2,9 @@ package copdu
 
 import "github.com/gentlemanautomaton/dcerpc/pdu/copdu/presentationcontext"
 
-// Bind represents a bind PDU in the connection-oriented protocol. It is sent
-// from the client to the server.
-type Bind struct {
+// BindAck represents a bind acknowledgment PDU in the connection-oriented
+// protocol. It is sent from the server to the client.
+type BindAck struct {
 	// TODO: Decide whether we include the header here or not
 
 	// MaxTransmitFrag is the maximum fragment size the sender can transmit.
@@ -17,7 +17,11 @@ type Bind struct {
 	// associated with. 0 indicates a request for the creation of a new group.
 	AssocGroupID uint32
 
-	Elements presentationcontext.List
+	// TODO: Add secondary address field
+
+	// TODO: Align(4)
+
+	Results presentationcontext.ResultList
 
 	// TODO: Handle optional auth verifier, probably as a separate struct or something.
 }
