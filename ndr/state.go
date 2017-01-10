@@ -5,7 +5,7 @@ import "sync"
 // State represents the shared encoder and decoder state when communicating
 // via NDR.
 type State struct {
-	mutex sync.RWMutex
+	mutex sync.RWMutex // TODO: Use different mutexes for different properties
 	// ptrToRef maps pointers to referent identifiers. Pointers are cast to
 	// interface{} to avoid the use of unsafe.Pointer.
 	ptrToRef map[interface{}]uint64
@@ -14,6 +14,8 @@ type State struct {
 	refToPtr map[uint64]interface{}
 	// id is the last referent ID to be allocated
 	id uint64
+	// errors is the set of errors encountered during encoding or decoding
+	errors []error
 }
 
 // NewState initializes a new encoder/decoder state and returns it.
@@ -52,4 +54,12 @@ func (s *State) Register(v interface{}) (refID uint64) {
 	s.refToPtr[s.id] = v
 	refID = s.id
 	return
+}
+
+// AddError adds the given error to the list of errors encountered in the
+// current encoding or decoding session.
+func (s *State) AddError(err error) {
+	s.mutex.Lock()
+	s.errors = append(s.errors, err)
+	s.mutex.Unlock()
 }
