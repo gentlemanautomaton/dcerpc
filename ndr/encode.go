@@ -16,6 +16,11 @@ type encInstr struct {
 	index []int
 }
 
+type encField struct {
+	Name  string
+	Index []int
+}
+
 // EncOp represents a compiled NDR encoding operation for a particular type or
 // field.
 type EncOp func(w Writer, s *State, v reflect.Value)
@@ -75,71 +80,90 @@ func EncUint64(w Writer, s *State, v reflect.Value) {
 
 // EncString is an NDR encoding function for a string.
 func EncString(w Writer, s *State, v reflect.Value) {
-
+	w.WriteString(v.String())
 }
 
 // EncVaryingString is an NDR encoding function for varying strings.
 func EncVaryingString(w Writer, s *State, v reflect.Value) {
 	w.WriteUint32(0)                 // Varying string offset, always zero in our case
 	w.WriteUint32((uint32)(v.Len())) // Varying string length, in number of characters
+	w.WriteString(v.String())
 }
 
-// EncOpForConformantStruct returns an NDR conformant data encoding function
-// for the given type, which must be a struct.
-func EncOpForConformantStruct(rt reflect.Type) (EncOp, []int) {
-	last := rt.NumField() - 1
-	if last >= 0 {
-		f := rt.Field(last)
-		if IsConformantField(f) {
-			return EncOpForConformantField(f)
-		}
-	}
-	return EncNoop, nil
-}
-
-// EncOpForConformantSlice returns an NDR conformant data encoding function for
-// the given type, which must be a slice.
-func EncOpForConformantSlice(rt reflect.Type, attrs types.FieldAttrList) EncOp {
-	return nil
-}
-
-// EncOpForConformantField returns an NDR conformant data encoding function for
-// the given field, which must be a conformant slice or a conformant struct.
-func EncOpForConformantField(rf reflect.StructField) (EncOp, []int) {
-	attrs := types.ParseFieldAttrList(rf.Tag.Get("idl"))
-	switch rf.Type.Kind() {
-	case reflect.Slice:
-		if attrs.IsConformant() {
-			// TODO: Evaluate min_is, max_is and size_is
-			//op := encOpForConformantSlice(rf.Type, attrs)
-			return func(w Writer, s *State, v reflect.Value) {
-				return
-			}, rf.Index
-		}
-	}
-	if attrs.IsConformant() {
-		// TODO: Look for conformant attribute data
-		return nil, nil
-	}
-	// TODO: Evaluate struct members to find the conformant member
-	return nil, nil
-}
-
-// EncOpForArray returns an NDR encoding functiong for the given type, which
+// EncOpForArray returns an NDR encoding function for the given type, which
 // must be an array.
 func EncOpForArray(rt reflect.Type) EncOp {
-	// FIXME: Handle multiple dimensions
-	count := rt.Len()
-	elemOp := EncOpFor(rt.Elem())
+	e1 := rt.Elem()
+	if e1.Kind() != reflect.Array {
+		return EncOpForArray1D(rt.Len(), EncOpFor(e1))
+	}
+	e2 := e1.Elem()
+	if e2.Kind() != reflect.Array {
+		return EncOpForArray2D(rt.Len(), e1.Len(), EncOpFor(e2))
+	}
+	e3 := e2.Elem()
+	if e3.Kind() != reflect.Array {
+		return EncOpForArray3D(rt.Len(), e1.Len(), e2.Len(), EncOpFor(e3))
+	}
+	e4 := e3.Elem()
+	return EncOpForArray4D(rt.Len(), e1.Len(), e2.Len(), e3.Len(), EncOpFor(e4))
+}
+
+// EncOpForArray1D returns an NDR encoding function for a one-dimensional array
+// with the given length and element encoding function.
+func EncOpForArray1D(length int, elemOp EncOp) EncOp {
 	return func(w Writer, s *State, v reflect.Value) {
-		for e := 0; e < count; e++ {
-			elemOp(w, s, v.Index(e))
+		for i := 0; i < length; i++ {
+			elemOp(w, s, v.Index(i))
+		}
+	}
+}
+
+// EncOpForArray2D returns an NDR encoding function for a two-dimensional array
+// with the given lengths and element encoding function.
+func EncOpForArray2D(len1, len2 int, elemOp EncOp) EncOp {
+	return func(w Writer, s *State, v reflect.Value) {
+		for i := 0; i < len1; i++ {
+			for j := 0; j < len2; j++ {
+				elemOp(w, s, v.Index(i).Index(j))
+			}
+		}
+	}
+}
+
+// EncOpForArray3D returns an NDR encoding function for a three-dimensional
+// array with the given lengths and element encoding function.
+func EncOpForArray3D(len1, len2, len3 int, elemOp EncOp) EncOp {
+	return func(w Writer, s *State, v reflect.Value) {
+		for i := 0; i < len1; i++ {
+			for j := 0; j < len2; j++ {
+				for k := 0; k < len3; k++ {
+					elemOp(w, s, v.Index(i).Index(j).Index(k))
+				}
+			}
+		}
+	}
+}
+
+// EncOpForArray4D returns an NDR encoding function for a three-dimensional
+// array with the given lengths and element encoding function.
+func EncOpForArray4D(len1, len2, len3, len4 int, elemOp EncOp) EncOp {
+	return func(w Writer, s *State, v reflect.Value) {
+		for i := 0; i < len1; i++ {
+			for j := 0; j < len2; j++ {
+				for k := 0; k < len3; k++ {
+					for m := 0; m < len4; m++ {
+						elemOp(w, s, v.Index(i).Index(j).Index(k).Index(m))
+					}
+				}
+			}
 		}
 	}
 }
 
 // EncOpForSlice returns an NDR encoding function for the given type, which
-// must be a slice.
+// must be a slice. The encoding function will encode the slice will as a
+// varying array.
 func EncOpForSlice(rt reflect.Type) EncOp {
 	// FIXME: Handle multiple dimensions
 	elemOp := EncOpFor(rt.Elem())
@@ -152,8 +176,94 @@ func EncOpForSlice(rt reflect.Type) EncOp {
 	}
 }
 
+// EncSliceElements encodes all of the slice elements with the given slice
+// element encoding function. The slice may be multi-dimensional. Only the
+// subsets specified for each dimension will be encoded.
+//
+// If any subset exceeds the boundary of the actual slice data, zero values
+// appropriate for the element type will be generated to fill in the place of
+// the missing range. This is done to avoid encoding malformed data.
+func EncSliceElements(w Writer, s *State, v reflect.Value, subsets []SliceSubset, elemOp EncOp) {
+	type position struct {
+		index        int // current traversal index of this dimension, not including the offset
+		parent       reflect.Value
+		parentLength int // Actual length of parent slice
+	}
+	dimensions := len(subsets)
+	maxDepth := dimensions - 1
+	depth := 0
+	stack := make([]position, 0, dimensions)
+	stack = append(stack, position{0, v, v.Len()})
+	pos, subset := &stack[depth], &subsets[depth]
+	for {
+		// This loop stops at each slice in the N-dimensional set of slices (which
+		// is effectively a tree of slices). It starts at the root slice.
+
+		// Traverse down to the next leaf slice
+		for depth < maxDepth {
+			depth++
+			if pos.parent.IsValid() && pos.index < pos.parentLength {
+				p := pos.parent.Index(pos.index)
+				stack = append(stack, position{0, p, p.Len()})
+			} else {
+				stack = append(stack, position{0, reflect.Value{}, 0})
+			}
+			pos, subset = &stack[depth], &subsets[depth]
+		}
+
+		// Write all of the elements in the leaf slice
+		start, end := subset.Offset, subset.Offset+subset.Count
+		if pos.parent.IsValid() {
+			end1, end2 := pos.parentLength, end
+			if end < end2 {
+				//
+			}
+			// Write values that are present
+			if pos.parentLength >= subset.Offset+subset.Count {
+
+			}
+			// Write values that are absent
+		} else {
+			// Write zero elements entirely
+			for i := start; i < end; i++ {
+				// FIXME: Add error to state
+				// TODO: Accept a zero-value element function and call it here?
+				elemOp(w, s, reflect.Value{})
+			}
+		}
+		for i, end := subset.Offset, subset.Offset+subset.Count; i < end; i++ {
+			// FIXME: Perform boundary checks on the actual data
+			if i < pos.parentLength {
+				// FIXME: Add error to state
+				// TODO: Accept a zero-value element function and call it here?
+				elemOp(w, s, reflect.Value{})
+			} else {
+				elemOp(w, s, pos.parent.Index(i))
+			}
+		}
+
+		// Traverse upward and forward
+		for {
+			depth--
+			if depth < 0 {
+				return
+			}
+			stack = stack[0 : len(stack)-1]
+			pos, subset = &stack[depth], &subsets[depth]
+			pos.index++
+			if pos.index < subset.Count {
+				break
+			}
+		}
+	}
+}
+
 // EncOpForStruct returns an NDR encoding function for the given type, which
-// must be a struct.
+// must be a struct. If the struct contains conformant data it will be
+// encoded appropriately.
+//
+// See section 14.3.6 of the DCE RPC publication for an overview of the
+// struct encoding rules under NDR transfer syntax.
 func EncOpForStruct(rt reflect.Type) EncOp {
 	engine := make([]encInstr, 0, rt.NumField())
 	// TODO: Add alignment op?
@@ -164,6 +274,12 @@ func EncOpForStruct(rt reflect.Type) EncOp {
 			index: index,
 		})
 	}
+	if alignmentOp := EncOpForStructAlignment(rt); alignmentOp != nil {
+		engine = append(engine, encInstr{
+			op: alignmentOp,
+		})
+	}
+
 	for i := 0; i < rt.NumField(); i++ {
 		f := rt.Field(i)
 		if op := EncOpForField(f); op != nil {
@@ -180,6 +296,39 @@ func EncOpForStruct(rt reflect.Type) EncOp {
 			instr.op(w, s, field)
 		}
 	}
+}
+
+func encOpForInstructions(engine []encInstr, alignment int) EncOp {
+	return func(w Writer, s *State, v reflect.Value) {
+		w.Align(alignment)
+		for i := 0; i < len(engine); i++ {
+			instr := &engine[i]
+			field := v.FieldByIndex(instr.index)
+			instr.op(w, s, field)
+		}
+	}
+}
+
+func encOpForConformantInstructions(engine []encInstr, alignment int, prealignmentCount int) EncOp {
+	return func(w Writer, s *State, v reflect.Value) {
+		for i := 0; i < prealignmentCount; i++ {
+			instr := &engine[i]
+			field := v.FieldByIndex(instr.index)
+			instr.op(w, s, field)
+		}
+		w.Align(alignment)
+		for i := prealignmentCount; i < len(engine); i++ {
+			instr := &engine[i]
+			field := v.FieldByIndex(instr.index)
+			instr.op(w, s, field)
+		}
+	}
+}
+
+// EncOpForStructAlignment returns an NDR encoding function for aligning the
+// given type, which must be a struct.
+func EncOpForStructAlignment(rt reflect.Type) EncOp {
+	return nil
 }
 
 // EncOpForPrimitive returns an NDR encoding function for the given type, if it
@@ -206,6 +355,115 @@ func EncOpForPrimitive(rt reflect.Type) EncOp {
 		return EncUint64
 	}
 	return nil
+}
+
+// EncOpForStructConformance returns an NDR conformant data encoding function
+// for the given type, which must be a struct.
+func EncOpForStructConformance(rt reflect.Type) (EncOp, []int) {
+	last := rt.NumField() - 1
+	if last >= 0 {
+		f := rt.Field(last)
+		if IsConformantField(f) {
+			return EncOpForFieldConformance(f)
+		}
+	}
+	return EncNoop, nil
+}
+
+// EncOpForSliceConformance returns an encoding function for NDR conformance
+// data that encodes the conformance offset for the given base type, and slice
+// type which must be a
+// slice.
+func EncOpForSliceConformance(base reflect.Type, slice reflect.Type, attrs types.FieldAttrList) EncOp {
+	min, hasMin := attrs.Lookup("min_is")
+	max, hasMax := attrs.Lookup("max_is")
+	size, hasSize := attrs.Lookup("size")
+	switch {
+	case hasMin && hasMax:
+		minField, minOk := base.FieldByName(min)
+		maxField, maxOk := base.FieldByName(max)
+		if minOk && maxOk {
+			return EncOpForMinMaxConformance(minField.Index, maxField.Index)
+		}
+		// FIXME: panic?
+	case hasSize:
+		sizeField, sizeOk := base.FieldByName(size)
+		if sizeOk {
+			return EncOpForSizeConformance(sizeField.Index)
+		}
+	case hasMin:
+		minField, minOk := base.FieldByName(min)
+		if minOk {
+			return EncOpForMinConformance(minField.Index)
+		}
+	case hasMax:
+		maxField, maxOk := base.FieldByName(max)
+		if maxOk {
+			return EncOpForMaxConformance(maxField.Index)
+		}
+	}
+	// FIXME: panic?
+	return EncNoop
+}
+
+func EncOpForMinMaxConformance(minFieldIndex []int, maxFieldIndex []int) EncOp {
+	return func(w Writer, s *State, v reflect.Value) {
+		min := v.FieldByIndex(minFieldIndex).Uint()
+		max := v.FieldByIndex(maxFieldIndex).Uint()
+		// FIXME: panic if min or max overflows a 32 bit integer?
+		w.WriteUint32((uint32)(min))
+		w.WriteUint32((uint32)(max))
+	}
+}
+
+func EncOpForMinConformance(minFieldIndex []int) EncOp {
+	return func(w Writer, s *State, v reflect.Value) {
+		min := v.FieldByIndex(minFieldIndex).Uint()
+		// FIXME: panic if min overflows a 32 bit integer?
+		w.WriteUint32((uint32)(min))
+	}
+}
+
+func EncOpForMaxConformance(maxFieldIndex []int) EncOp {
+	return func(w Writer, s *State, v reflect.Value) {
+		max := v.FieldByIndex(maxFieldIndex).Uint()
+		// FIXME: panic if max overflows a 32 bit integer?
+		w.WriteUint32((uint32)(max))
+	}
+}
+
+func EncOpForSizeConformance(sizeFieldIndex []int) EncOp {
+	return func(w Writer, s *State, v reflect.Value) {
+		size := v.FieldByIndex(sizeFieldIndex).Uint()
+		// FIXME: panic if size overflows a 32 bit integer?
+		w.WriteUint32((uint32)(size))
+	}
+}
+
+// EncOpForConformantField returns an NDR conformant data encoding function for
+// the given field, which must be a conformant slice or a conformant struct.
+func EncOpForConformantField(base reflect.Type, rf reflect.StructField) (EncOp, []int) {
+	attrs := types.ParseFieldAttrList(rf.Tag.Get("idl"))
+	switch rf.Type.Kind() {
+	case reflect.Slice:
+		if attrs.IsConformant() {
+			// TODO: Evaluate min_is, max_is and size_is
+			//op := encOpForConformantSlice(rf.Type, attrs)
+			return func(w Writer, s *State, v reflect.Value) {
+				return
+			}, rf.Index
+		}
+	case reflect.Struct:
+		if IsConformantStruct(rf.Type) {
+			return
+		}
+	}
+	if attrs.IsConformant() {
+		// TODO: Look for conformant attribute data
+		return nil, nil
+	}
+	// TODO: Evaluate struct members to find the conformant member
+	return nil, nil
 }
 
 // EncOpForField returns an NDR encoding function for the given field.
@@ -235,10 +493,68 @@ func EncOpForField(rf reflect.StructField) EncOp {
 	return nil
 }
 
-// EncOpForStructAlignment returns an NDR encoding function for aligning the
-// given type, which must be a struct.
-func EncOpForStructAlignment(rt reflect.Type) EncOp {
-	return nil
+// EncOpForSliceField returns an NDR encoding function for the given type, which
+// must be a slice.
+func EncOpForSliceField(base reflect.Type, slice reflect.Type, attrs types.FieldAttrList) EncOp {
+	// FIXME: Handle multiple dimensions
+	elemOp := EncOpFor(slice.Elem()) // FIXME: Handle embedded slices as multi-dimensional data?
+	var (
+		firstFieldName, hasFirst   = attrs.Lookup("first_is")
+		lastFieldName, hasLast     = attrs.Lookup("last_is")
+		lengthFieldName, hasLength = attrs.Lookup("length_is")
+	)
+
+	// FIXME: Support expressions?
+
+	switch {
+	case hasFirst && hasLast:
+		firstField, firstOk := base.FieldByName(firstFieldName)
+		lastField, lastOk := base.FieldByName(lastFieldName)
+		if firstOk && lastOk {
+			encOpForSliceWithFirstLast(firstField.Index, lastField.Index, elemOp)
+		} else {
+			if !firstOk {
+				panic(NewEncodingError(MissingIDLFieldRef, base.Name(), slice.Name(), firstFieldName))
+			}
+			if !lastOk {
+				panic(NewEncodingError(MissingIDLFieldRef, base.Name(), slice.Name(), lastFieldName))
+			}
+		}
+	case hasFirst && hasLength:
+	case hasLast:
+	case hasLength:
+	case hasLast && hasLength:
+		panic("attribute list includes both last_is and length_is attributes, which are mutually exclusive")
+	default:
+
+		return func(w Writer, s *State, v reflect.Value) {
+			w.WriteUint32(0)                 // Varying array offset, always zero in our case
+			w.WriteUint32((uint32)(v.Len())) // Varying array length, in number of elements
+			for e := 0; e < v.Len(); e++ {
+				elemOp(w, s, v.Index(e))
+			}
+		}
+	}
+}
+
+func encOpForSliceWithFirstLast(typeName string, sliceField, firstField, lastField encField, elemOp EncOp) EncOp {
+	return func(w Writer, s *State, v reflect.Value) {
+		first := v.FieldByIndex(firstField.Index).Uint()
+		last := v.FieldByIndex(lastField.Index).Uint()
+		// FIXME: panic if min or max overflows a 32 bit integer?
+		// FIXME: Perform bounds checking?
+		if first > last {
+			s.AddError(NewEncodingError(FirstGreaterThanLast, typeName, sliceField.Name, firstField.Name, int(first), int(last)))
+			w.WriteUint32(0)
+			w.WriteUint32(0)
+		} else {
+			w.WriteUint32((uint32)(first))
+			w.WriteUint32((uint32)(last - first + 1))
+			for e := first; e < last; e++ {
+				elemOp(w, s, v.Index(int(e)))
+			}
+		}
+	}
 }
 
 // EncOpFor returns an NDR encoding function for the given type.
