@@ -25,6 +25,16 @@ func (list FieldAttrList) Contains(anyOf ...string) bool {
 	return false
 }
 
+// Lookup returns the value of the requested field attribute.
+func (list FieldAttrList) Lookup(typ string) (value string, ok bool) {
+	for i := 0; i < len(list); i++ {
+		if list[i].Type == typ {
+			return list[i].Value, true
+		}
+	}
+	return "", false
+}
+
 // IsConformant returns true if the field attributes indicate a conformant field.
 func (list FieldAttrList) IsConformant() bool {
 	return list.Contains("min_is", "max_is", "size_is")
