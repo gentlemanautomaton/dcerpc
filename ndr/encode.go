@@ -214,31 +214,25 @@ func EncSliceElements(w Writer, s *State, v reflect.Value, subsets []SliceSubset
 		// Write all of the elements in the leaf slice
 		start, end := subset.Offset, subset.Offset+subset.Count
 		if pos.parent.IsValid() {
-			end1, end2 := pos.parentLength, end
-			if end < end2 {
-				//
-			}
-			// Write values that are present
-			if pos.parentLength >= subset.Offset+subset.Count {
-
-			}
-			// Write values that are absent
-		} else {
-			// Write zero elements entirely
-			for i := start; i < end; i++ {
-				// FIXME: Add error to state
-				// TODO: Accept a zero-value element function and call it here?
-				elemOp(w, s, reflect.Value{})
-			}
-		}
-		for i, end := subset.Offset, subset.Offset+subset.Count; i < end; i++ {
-			// FIXME: Perform boundary checks on the actual data
-			if i < pos.parentLength {
-				// FIXME: Add error to state
-				// TODO: Accept a zero-value element function and call it here?
-				elemOp(w, s, reflect.Value{})
-			} else {
+			i := start
+			// Write values for elements that are present
+			for i < pos.parentLength {
 				elemOp(w, s, pos.parent.Index(i))
+				i++
+			}
+			// Write zero-values for elements that are absent
+			for i < end {
+				// FIXME: Add error to state?
+				// TODO: Accept a zero-value element function and call it here?
+				elemOp(w, s, reflect.Value{})
+				i++
+			}
+		} else {
+			// Write zero-values for elements that are absent
+			for i := start; i < end; i++ {
+				// FIXME: Add error to state?
+				// TODO: Accept a zero-value element function and call it here?
+				elemOp(w, s, reflect.Value{})
 			}
 		}
 
