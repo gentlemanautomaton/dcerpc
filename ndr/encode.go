@@ -162,7 +162,7 @@ func EncOpForArray4D(len1, len2, len3, len4 int, elemOp EncOp) EncOp {
 }
 
 // EncOpForSlice returns an NDR encoding function for the given type, which
-// must be a slice. The encoding function will encode the slice will as a
+// must be a slice. The encoding function will encode the slice as a
 // varying array.
 func EncOpForSlice(rt reflect.Type) EncOp {
 	// FIXME: Handle multiple dimensions

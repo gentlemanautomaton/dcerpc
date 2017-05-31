@@ -52,7 +52,7 @@ func (enc *Encoder) EncodeValue(v reflect.Value) error {
 	s := State{} // FIXME: Figure out how the caller should provide state
 
 	enc.mutex.Lock()
-	op(enc.w, &s, v) // TOOD: Return error from op?
+	op(enc.w, &s, v) // TODO: Return error from op?
 	enc.mutex.Unlock()
 	return nil
 }
