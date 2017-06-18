@@ -29,9 +29,9 @@ type EncodingError struct {
 func (e EncodingError) Error() string {
 	switch e.Code {
 	case FirstGreaterThanLast:
-		return fmt.Sprintf("NDR encoder error: Type \"%s\" contains a varying array field \"%s\" with an invalid first index \"%d\" that is greater than its last index \"%d\"", e.TypeName, e.FieldName, e.Index, e.Limit)
+		return fmt.Sprintf("ndr encoder error: type \"%s\" contains a varying array field \"%s\" with an invalid first index \"%d\" that is greater than its last index \"%d\"", e.TypeName, e.FieldName, e.Value, e.Limit)
 	case MissingIDLFieldRef:
-		return fmt.Sprintf("NDR encoder error: Type \"%s\" does not contain the \"%s\" field, which was referenced by the IDL attributes of the \"%s\" field.", e.TypeName, e.RefFieldName, e.FieldName)
+		return fmt.Sprintf("ndr encoder error: type \"%s\" does not contain the \"%s\" field, which was referenced by the IDL attributes of the \"%s\" field.", e.TypeName, e.RefFieldName, e.FieldName)
 	default:
 		return "Unknown NDR encoding error"
 	}
