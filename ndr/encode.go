@@ -6,6 +6,15 @@ import (
 	"github.com/gentlemanautomaton/dcerpc/idl/types"
 )
 
+// NDR transmits arrays in a way that is convenient for implementations written
+// in C, but end up being cumbersome for other programming languages. The
+// use of conformant and varying arrays seem particularly arcane in a Go
+// programming environment, and the NDR specification does a poor job of
+// explaining the motivation behind their design. This article by Don Box
+// can be useful in understanding their intended use:
+//
+// https://www.microsoft.com/msj/1196/activex1196.aspx
+
 type encEngine struct {
 	alignment int
 	instr     []encInstr
@@ -93,6 +102,13 @@ func EncVaryingString(w Writer, s *State, v reflect.Value) {
 // EncOpForArray returns an NDR encoding function for the given type, which
 // must be an array.
 func EncOpForArray(rt reflect.Type) EncOp {
+	// Arrays of 1 to 4 dimensions have direct implementations that operate with
+	// a single encoding function managing the iterators.
+	//
+	// Arrays of 5 or more dimensions use 2 or more encoding functions called
+	// recursively to encode the values. In such cases the calls to EncOpFor in
+	// this function result in recursive calls to EncOpForArray.
+
 	e1 := rt.Elem()
 	if e1.Kind() != reflect.Array {
 		return EncOpForArray1D(rt.Len(), EncOpFor(e1))
@@ -162,20 +178,96 @@ func EncOpForArray4D(len1, len2, len3, len4 int, elemOp EncOp) EncOp {
 }
 
 // EncOpForSlice returns an NDR encoding function for the given type, which
-// must be a slice. The encoding function will encode the slice as a
-// varying array.
+// must be a slice. The encoding function will encode the slice as a varying
+// array.
+//
+// For the encoding of slices within structs, use EncOpForSliceField.
 func EncOpForSlice(rt reflect.Type) EncOp {
-	// FIXME: Handle multiple dimensions
-	elemOp := EncOpFor(rt.Elem())
+	elem := rt.Elem()
+	dimensions := 1
+	for elem.Kind() == reflect.Slice {
+		dimensions++
+		elem = elem.Elem()
+	}
+	elemOp := EncOpFor(elem)
 	return func(w Writer, s *State, v reflect.Value) {
-		w.WriteUint32(0)                 // Varying array offset, always zero in our case
-		w.WriteUint32((uint32)(v.Len())) // Varying array length, in number of elements
-		for e := 0; e < v.Len(); e++ {
-			elemOp(w, s, v.Index(e))
-		}
+		subsets := SliceSubsets(dimensions, v)
+		EncSliceHeader(w, s, v, subsets)
+		EncSliceElements(w, s, v, subsets, elemOp)
 	}
 }
 
+// Microsoft reference for MIDL array definitions:
+// https://msdn.microsoft.com/en-us/library/aa367081
+
+// SliceSubsets determines the maximum length of each dimension of v, which must
+// be a slice and must be of the given dimensionality.
+func SliceSubsets(dimensions int, v reflect.Value) (subsets []SliceSubset) {
+	// Visit each node in the tree to find the maximum length at each depth level.
+	subsets = make([]SliceSubset, dimensions)
+	depth, maxDepth := 0, dimensions-1
+	stack := make([]SlicePosition, 0, dimensions)
+	stack = append(stack, SlicePosition{0, v, v.Len()})
+	pos, subset := &stack[depth], &subsets[depth]
+	// Examine each slice in each dimension to determine the maximum length
+
+	// FIXME: Most of the code below is copied from the EncSliceElements function
+	//        and needs to be reworked.
+	for {
+		// This loop stops at each slice in the N-dimensional set of slices (which
+		// is effectively a tree of slices). It starts at the root slice.
+
+		if pos.index == 0 {
+			if pos.parent.IsValid() {
+				if subset.Count < pos.parentLength {
+					subset.Count = pos.parentLength
+				}
+			}
+		}
+
+		// Traverse down to the next leaf slice
+		for depth < maxDepth {
+			if pos.parent.IsValid() && pos.index < pos.parentLength {
+				depth++
+				p := pos.parent.Index(pos.index)
+				stack = append(stack, SlicePosition{0, p, p.Len()})
+			} else {
+				break
+			}
+			pos, subset = &stack[depth], &subsets[depth]
+		}
+
+		// Write all of the elements in the leaf slice
+
+		// Traverse upward and forward
+		for {
+			depth--
+			if depth < 0 {
+				return
+			}
+			stack = stack[0 : len(stack)-1]
+			pos, subset = &stack[depth], &subsets[depth]
+			pos.index++
+			if pos.index < subset.Count {
+				break
+			}
+		}
+	}
+	return
+}
+
+// EncSliceHeader is an NDR encoding function for varying array headers,
+// which declare array offsets and counts.
+func EncSliceHeader(w Writer, s *State, v reflect.Value, subsets []SliceSubset) {
+	for _, subset := range subsets {
+		w.WriteUint32(uint32(subset.Offset))
+		w.WriteUint32(uint32(subset.Count))
+	}
+}
+
+// EncSliceElements is an NDR encoding function for varying array elements. It
+// does not encode varying array headers.
+//
 // EncSliceElements encodes all of the slice elements with the given slice
 // element encoding function. The slice may be multi-dimensional. Only the
 // subsets specified for each dimension will be encoded.
@@ -184,16 +276,10 @@ func EncOpForSlice(rt reflect.Type) EncOp {
 // appropriate for the element type will be generated to fill in the place of
 // the missing range. This is done to avoid encoding malformed data.
 func EncSliceElements(w Writer, s *State, v reflect.Value, subsets []SliceSubset, elemOp EncOp) {
-	type position struct {
-		index        int // current traversal index of this dimension, not including the offset
-		parent       reflect.Value
-		parentLength int // Actual length of parent slice
-	}
 	dimensions := len(subsets)
-	maxDepth := dimensions - 1
-	depth := 0
-	stack := make([]position, 0, dimensions)
-	stack = append(stack, position{0, v, v.Len()})
+	depth, maxDepth := 0, dimensions-1
+	stack := make([]SlicePosition, 0, dimensions)
+	stack = append(stack, SlicePosition{0, v, v.Len()})
 	pos, subset := &stack[depth], &subsets[depth]
 	for {
 		// This loop stops at each slice in the N-dimensional set of slices (which
@@ -204,9 +290,9 @@ func EncSliceElements(w Writer, s *State, v reflect.Value, subsets []SliceSubset
 			depth++
 			if pos.parent.IsValid() && pos.index < pos.parentLength {
 				p := pos.parent.Index(pos.index)
-				stack = append(stack, position{0, p, p.Len()})
+				stack = append(stack, SlicePosition{0, p, p.Len()})
 			} else {
-				stack = append(stack, position{0, reflect.Value{}, 0})
+				stack = append(stack, SlicePosition{0, reflect.Value{}, 0})
 			}
 			pos, subset = &stack[depth], &subsets[depth]
 		}
