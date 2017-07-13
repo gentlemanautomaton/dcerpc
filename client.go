@@ -13,7 +13,9 @@ type Client struct {
 // Invoke will run the requested remote procedure.
 //
 // TODO: Figure out a good way to pass binding and interface information in.
+//
 // TODO: Figure out a good way to pass the RPC parameters in.
+//
 // TODO: Return some sort of call struct (or interface)?
 func (c Client) Invoke(ctx context.Context) {
 
