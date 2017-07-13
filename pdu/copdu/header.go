@@ -14,7 +14,7 @@ type Header struct {
 	PacketType   uint8 // 5 least significant bits
 	Flags        uint8
 	Format       formatlabel.Format
-	FragLength   uint16
-	AuthLength   uint16
-	CallID       uint32
+	FragLength   uint16 // Byte order depends on format
+	AuthLength   uint16 // Byte order depends on format
+	CallID       uint32 // Byte order depends on format
 }
