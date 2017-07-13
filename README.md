@@ -1,4 +1,7 @@
 # dcerpc
+
+[![GoDoc](https://godoc.org/github.com/gentlemanautomaton/dcerpc?status.svg)](https://godoc.org/github.com/gentlemanautomaton/dcerpc)
+
 A DCE / RPC Implementation in Golang.
 
 The `dcerpc` project aims to provide a native Go language implementation of the
