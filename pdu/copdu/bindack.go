@@ -7,20 +7,23 @@ import "github.com/gentlemanautomaton/dcerpc/pdu/copdu/presentationcontext"
 type BindAck struct {
 	// TODO: Decide whether we include the header here or not
 
-	// MaxTransmitFrag is the maximum fragment size the sender can transmit.
+	// MaxTransmitFrag is the negotiated maximum fragment size selected by the
+	// server.
 	MaxTransmitFrag uint16
 
-	// MaxReceiveFrag is the maximum fragment size the sender can receive.
+	// MaxReceiveFrag is the negotiated maximum fragment size selected by the
+	// server.
 	MaxReceiveFrag uint16
 
-	// AssocGroupID is the client-server association group that this packet is
-	// associated with. 0 indicates a request for the creation of a new group.
+	// AssocGroupID is the client-server association group that this binding is
+	// associated with.
 	AssocGroupID uint32
 
 	// TODO: Add secondary address field
 
 	// TODO: Align(4)
 
+	// Results contains the results of the presentation context negotiation.
 	Results presentationcontext.ResultList
 
 	// TODO: Handle optional auth verifier, probably as a separate struct or something.
