@@ -4,7 +4,7 @@ import "sync"
 
 type clientGroupKey struct {
 	address string // FIXME: Figure out how we're storing primary server addresses
-	id      uint   // Association group ID
+	id      uint32 // Association group ID
 }
 
 // ClientGroup manages the client side of an association group.
@@ -12,7 +12,7 @@ type clientGroupKey struct {
 // Clients that share a common protocol tower and communicate with the same
 // server are placed into the same client group.
 type ClientGroup struct {
-	id uint
+	id uint32
 
 	mutex   sync.RWMutex
 	clients []*Client
